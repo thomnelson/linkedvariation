@@ -1,0 +1,109 @@
+initialize() {
+           // mutation types: m1 will be neutral
+           //                 m2 will be locally adaptive, + in p2
+           //						m3 will be locally adaptive, + in p1
+//   s = 0.2;
+	initializeMutationType("m1", 0.5, "f", 0.0);
+	initializeMutationType("m2", 0.5, "f", s);
+	initializeMutationType("m3", 0.5, "f", -1*s);
+
+		   // g1 genomic element type: uses m1 for all mutations
+	initializeGenomicElementType("g1", c(m1), c(100));
+           // Chromosome of length 100 kb with uniform recombination
+	initializeGenomicElement(g1, 0, 100000);
+	
+//	r = 5e-5;
+//	mu   = 5e-7;
+	// set mutation landscape so that 'core' allele does not mutate.	
+	ends = c(1,49994,50004,99999,100000);
+	mus  = c(0,mu,0,mu,0);
+	rs   = c(r,r,0,r,r);
+	initializeRecombinationRate(rs, ends);
+	initializeMutationRate(mus,ends);
+}
+// create two habitat types w/ 1000 individuals each
+//  one will be panmictic, the other will be subdivided
+//  into k-1 subpopulations, each connected only to the
+//  large subpopulation of the other habitat type
+1 {
+
+//	N2 = 1000;
+
+//	popsize = N2;
+//	mig_red_factor = 1;
+	
+//	kpops = 1;
+	
+	k = kpops; 
+	sim.addSubpop("p1", N1);
+	for (i in 2:(k+1))
+		sim.addSubpop(i, integerDiv(N2,(k)));
+	for (i in 1:(k)) 
+			{
+			sim.subpopulations[i].setMigrationRates(
+				sim.subpopulations[0], 
+				1/(N2 * mig_red_factor));
+			sim.subpopulations[0].setMigrationRates(
+				sim.subpopulations[i], 
+				1/(N1 * mig_red_factor));
+			}
+}
+
+// change fitness value of m2 mutations 
+//so they're deleterious in p1
+fitness(m2,p1) { return 1/relFitness; }
+fitness(m3,p1) { return 1/relFitness; }
+
+1 late() {
+
+//	N2 = 1000;
+	k = kpops;
+	size2mutate = asInteger(round(integerDiv(N2,k)/2));
+	for (i in 1:(k))
+	    {
+		target_genomes = sample(sim.subpopulations[i].genomes, size2mutate);
+		target_genomes.addNewDrawnMutation(m2,50000);
+	    }
+	size2mutate = asInteger(round(asInteger(N1)/2));
+	target_genomes = sample(sim.subpopulations[0].genomes, size2mutate);
+	target_genomes.addNewDrawnMutation(m3,50003);
+
+}
+
+// evolve for additional 10000 generations and output sample
+10000 late() { 
+
+
+	ngenomes = 10;
+
+
+
+// introduce mutations at beginning and end of chr to
+//   ensure that ms coordinates are the same across simulations
+	
+//	N2 = 1000;
+//	kpops = 1;
+	Nk = integerDiv(N2,kpops);
+		
+	size2mutate = asInteger((N1*2)-1);
+	target_genomes = sample(sim.subpopulations[0].genomes, size2mutate);
+	// introduce a mutation of type m1 at position 99999 in all p1 genomes
+	target_genomes.addNewDrawnMutation(m1,100000);
+	target_genomes.addNewDrawnMutation(m1,0);	
+
+// Sample genomes from p1 and p2 and output MS
+//		kpops = 1;
+//		repl  = 1;
+        k = kpops;
+	genomes  = sample(sim.subpopulations[0].genomes, 10);
+	for (i in 1:k) {
+	    samplen = integerDiv(10,k);
+            genomes = c(genomes,sample(sim.subpopulations[i].genomes, samplen));
+        }
+	outpath   = c(paste(c("/home/thom_nelson/simulation/forward/slim/simulations/migrationSelectionBalance/N1-1000_N2-1000_s20_m05per_allPopsGetMuts/replicate",repl,"_k",k,"_gen10000.ms"),""));
+	genomes.outputMS(filePath=outpath);
+	outpath   = c(paste(c("/home/thom_nelson/simulation/forward/slim/simulations/migrationSelectionBalance/N1-1000_N2-1000_s20_m05per_allPopsGetMuts/replicate",repl,"_k",k,"_p1genomes_gen10000.ms"),""));
+	
+	sim.subpopulations[0].genomes.outputMS(filePath=outpath);
+	sim.simulationFinished(); 
+}

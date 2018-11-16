@@ -1,0 +1,779 @@
+---
+title: "SLiM_migsel2"
+author: "Thom Nelson"
+date: '`r Sys.Date()`'
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message=FALSE)
+
+stickledir <- "/Users/thom/Dropbox/1.Shared_with_Bill/9.Manuscripts/2.LinkedVariation/"
+
+simdir <- "/Users/thom/Dropbox/1.Oregon/Data/active/simulations/forward/SLiM/simulations/migrationSelectionBalance/"
+
+# standardize pi values? -------
+
+standardize <- FALSE
+
+# load stickleback data --------
+
+popgen <- read.table(
+        paste0(stickledir,"4.data/1.datasets/polymorphism.tsv"), 
+        sep = "\t", header = TRUE, stringsAsFactors=FALSE)
+    popgen$chr <- as.character(popgen$chr)
+    popgen     <- popgen[order(popgen$chr, popgen$Mb),]
+
+```
+
+
+# Stickleback data example
+
+There is an asymmetry in how genetic diversity is partitioned among chromosomes in Alaskan stickleback populations. Previously, we showed that independently isolated freshwater populations adapted to pond life largely using the same alleles across much of the genome that are identical-by-descent among freshwater populations. This results in many regions where haplotypes from multiple freshwater populations cluster into a single monophyletic clade while marine haplotypes form a reciprocally monophyletic clade. These 'divergent loci' have been maintained longer in the stickleback species than most genomic variation, but I also noticed that chromosomes carrying these loci were also older and showed greater polymorphism even in regions that aren't differentiated marine-to-freshwater. Maintenance of this much linked variation over such long timescales is not an observation that has really been explored in natural systems. 
+
+Below, I show genome-wide patterns of variation as a function of how far away a locus is from one that shows the 'divergent' topology. These data are therefore aggregates over all divergent genomic regions. As expected under long-term migration-selection balance among locally adapted populations, polymorphism and divergence times among all haplotypes increase in proximity to divergent loci. In the marine Rabbit Slough (RS) population, we also see the expected within-population result under MSB: a reduction in diversity due to constant selection against mirant alleles and an associated reduction in Ne. The freshwater populations, however, show a different pattern. Polymorphism does not decay but rather remains constant and may even increase in proximity to divergent loci. This effect is exaggerated when haplotypes from freshwater populations are combined.
+
+``` {r stickledata, echo=FALSE, fig.width=6,fig.height=4,fig.align='center'}
+
+# PLOT BY PHYSICAL DISTANCE TO A DIVERGENT LOCUS
+
+xmax	<-	2000
+ymax	<-	0.020
+
+sorted		<-	popgen[popgen$cons.sort != 'N' & 
+                       is.na(popgen$pi) == FALSE &
+                       is.na(popgen$dist2d) == FALSE &
+                       popgen$chr != 19,]
+sorted.neu	<-	sorted[sorted$cons.sort != 'D',]
+sorted.neu	<-	sorted.neu[sorted.neu$dist2d < 50000,]
+d			<-	sorted[sorted$cons.sort == "D",]
+n.d			<-	dim(d)[1]
+pi      	<-	mean(d$pi, na.rm=T)
+pi.fw		<-	mean(d$pi.fw, na.rm=T)
+pi.bt		<-	mean(d$pi.bt, na.rm=T)
+pi.bp		<-	mean(d$pi.bp, na.rm=T)
+pi.rs		<-	mean(d$pi.rs, na.rm=T)
+dxy			<-	mean(d$dxy.rsbt, na.rm=T)
+tmrca		<-	mean(d$threespine.scaled, na.rm=T)
+d.mean		<-	data.frame(pi,pi.fw,pi.bt,pi.bp,pi.rs,dxy,tmrca)
+
+layout(matrix(c(1,2),1,2,byrow=T))
+splinemethod	<-	"natural"
+df				<-	50
+plot(smooth.spline(sorted.neu$dist2d, sorted.neu$pi, df = df), 
+		xlim = c(0,xmax), ylim = c(0,0.006), xaxt = "n", yaxt = "n",
+		type = 'l', xlab = "", ylab = "", lwd = 2)
+	axis(1, at = seq(0,2000,by=500))
+	axis(2, at = seq(0,0.006,by=0.001))
+	abline(h = mean(sorted.neu$pi), lty = 'dotted')
+	abline(h = mean(sorted.neu$pi.fw), lty = 'dotted', col = 'blue3')
+	abline(h = mean(sorted.neu$pi.rs), lty = 'dotted', col = 'red3')
+	lines(smooth.spline(sorted.neu$dist2d, sorted.neu$pi.rs, df = df), 
+		col = 'red3', lwd = 2)
+	lines(smooth.spline(sorted.neu$dist2d, sorted.neu$pi.fw, df = df), 
+		col = 'blue3')
+	mtext("Distance to divergent locus, kb", side = 1, line = 3)
+	mtext("pi per site", side = 2, line = 3)
+legend(x="topright",legend=c("all pops","RS","BT+BP"),
+       lwd = 2, col = c("black","red3","blue3"),cex=0.75)
+
+plot(smooth.spline(sorted.neu$dist2d, sorted.neu$pi, df = df), 
+		xlim = c(0,xmax), ylim = c(0,0.006), xaxt = "n", yaxt = "n",
+		type = 'l', xlab = "", ylab = "", lwd = 2)
+	axis(1, at = seq(0,2000,by=500))
+	axis(2, at = seq(0,0.006,by=0.001))
+	abline(h = mean(sorted.neu$pi), lty = 'dotted')
+	abline(h = mean(sorted.neu$pi.fw), lty = 'dotted', col = 'blue3')
+	lines(smooth.spline(sorted.neu$dist2d, sorted.neu$pi.fw, df = df), 
+		col = 'blue3')
+	lines(smooth.spline(sorted.neu$dist2d, sorted.neu$pi.bt, df = df), 
+		col = 'lightblue')
+	lines(smooth.spline(sorted.neu$dist2d, sorted.neu$pi.bp, df = df), 
+		col = 'lightblue')
+	mtext("Distance to divergent locus, kb", side = 1, line = 3)
+	mtext("pi per site", side = 2, line = 3)
+legend(x="topright",legend=c("all pops","BT+BP","BT|BP"),
+       lwd = 2, col = c("black","blue3","lightblue"),cex=0.75)
+
+
+```
+
+
+
+### What's causing this?
+My hypothesis is that the substructure of the freshwater habitat (many semi-isolated populations rather than a single, large population) maintains greater genetic diversity on chromosomes that reside for longer times in freshwater populations. This is because freshwater-adaptive chromosomes are maintained at high frequency in multiple populations where they accumulate new variation on a specific genetic background. Migration, primarily with the marine population, shuttles those haplotypes to newly founded freshwater populations that use these low-frequency but historically diverse haplotypes during adaptation.
+
+
+### Simulations: symmetrical population structure
+
+```{r migsel_k1, echo=FALSE,fig.width=6,fig.height=4,fig.align='center'}
+
+simdir <- "/Users/thom/Dropbox/1.Oregon/Data/active/simulations/forward/SLiM/simulations/migrationSelectionBalance/"
+
+# CALCULATE PI
+k    <- 1
+pi.mat <- NULL
+rescale <- 1000
+
+
+simstatfiles <- list.files(paste0(simdir,"N1-1000_N2-1000/s05_m1per/"))
+simstatfiles <- simstatfiles[grepl(paste0("_k",k,"_"),simstatfiles)]
+reps <- length(simstatfiles)
+
+# read in first file to get dimensions
+rep1 <- read.table(paste0(simdir,"N1-1000_N2-1000/s05_m1per/",simstatfiles[1]),
+                   sep = "\t",header=TRUE)
+n.windows <- dim(rep1)[1]
+positions <- rep1$position.mid
+
+pi.mat <- matrix(nrow=length(positions),ncol=length(simstatfiles))
+pi.mat[,1] <- rep1$pi.window
+
+for (rep in 2:reps) {
+    sim <- read.table(paste0(
+                      simdir,"N1-1000_N2-1000/s05_m1per/",simstatfiles[rep]),
+                      sep="\t",header=TRUE
+                      )
+    pi.mat[,rep] <- sim$pi.window
+}
+
+pi.grandmean <- ifelse(standardize==TRUE, mean(pi.mat), 0)
+pi.mat <- (pi.mat - pi.grandmean)*rescale
+
+# SUMMARIZE pi within allelic classes
+
+pi.0          <- matrix(nrow=length(positions),ncol=reps)
+pi.p1.class1  <- matrix(nrow=length(positions),ncol=reps)
+pi.1          <- matrix(nrow=length(positions),ncol=reps)
+
+for (rep in 1:length(simstatfiles)) {
+    sim <- read.table(paste0(
+                      simdir,"N1-1000_N2-1000/s05_m1per/",simstatfiles[rep]),
+                      sep="\t",header=TRUE
+                      )
+    pi.0[,rep]  <- sim$class0.pi.window
+    pi.1[,rep]  <- sim$class1.pi.window
+    pi.p1.class1[,rep]  <- sim$p1.class1.pi.window
+}
+positions <- (positions / 1000) - 50
+pi.0          <- (pi.0 - pi.grandmean) * rescale
+pi.p1.class1  <- (pi.p1.class1 - pi.grandmean) * rescale
+pi.1          <- (pi.1 - pi.grandmean) * rescale
+
+# compute t-distribution-based CIs
+
+pi.ci          <- matrix(nrow=length(positions),ncol=2)
+pi.0.ci          <- matrix(nrow=length(positions),ncol=2)
+pi.p1.class1.ci  <- matrix(nrow=length(positions),ncol=2)
+pi.1.ci          <- matrix(nrow=length(positions),ncol=2)
+
+for (i in 1:length(positions)) {
+    pi.ci[i,]            <- t.test(pi.mat[i,])$conf.int
+    pi.0.ci[i,]          <- t.test(pi.0[i,])$conf.int
+    pi.1.ci[i,]          <- t.test(pi.1[i,])$conf.int
+    pi.p1.class1.ci[i,]  <- t.test(pi.p1.class1[i,])$conf.int
+}
+
+# PLOT RESULTS
+
+layout(matrix(c(1),1,1,byrow=T))
+par(las=1, mar=c(5,5,2,1))
+plot(0,0,xlim=c(min(positions),max(positions)),
+     ylim=c(-4,8),xlab="",
+     ylab="std pi",type='n')
+    # for (i in 1:reps) {
+    #     lines(positions, pi.mat[,i],col=rgb(0.5,0.5,0.5,0.1))
+    # }
+    polygon(x = c(positions,rev(positions)),
+            y = c(pi.ci[,1], rev(pi.ci[,2])),
+            col = 'gray75')
+    lines(positions, pi.ci[,1], lwd=0.5)
+    lines(positions, pi.ci[,2], lwd=0.5)
+    polygon(x = c(positions,rev(positions)),
+            y = c(pi.0.ci[,1], rev(pi.0.ci[,2])),
+            col = 'firebrick3')
+    lines(positions, pi.0.ci[,1], lwd=0.5)
+    lines(positions, pi.0.ci[,2], lwd=0.5)
+    polygon(x = c(positions,rev(positions)),
+            y = c(pi.p1.class1.ci[,1], rev(pi.p1.class1.ci[,2])),
+            col = 'deepskyblue3')
+    lines(positions, pi.p1.class1.ci[,1], lwd=0.5)
+    lines(positions, pi.p1.class1.ci[,2], lwd=0.5)
+    legend(x = 'topleft', legend=c("pi","pi, habitat 1","pi, habitat 2"),
+           lwd = c(1,1,1), col = c("black","firebrick3","deepskyblue3"))
+
+```
+
+
+
+``` {r k1_foldedCIs, fig.width=4,fig.height=4,fig.align='center'}
+
+pos.dnstream  <- positions      [positions > 0 ]
+pi.dnstream   <- pi.ci          [positions > 0,]
+p0.dnstream   <- pi.0.ci        [positions > 0,]
+p1c1.dnstream <- pi.p1.class1.ci[positions > 0,]
+
+par(las=1, mar=c(5,5,2,1))
+plot(0,0,xlim=c(min(pos.dnstream),max(pos.dnstream)),
+     ylim=c(-4,8),xlab="",
+     ylab="std pi",type='n')
+    # for (i in 1:reps) {
+    #     lines(positions, pi.mat[,i],col=rgb(0.5,0.5,0.5,0.1))
+    # }
+    polygon(x = c(pos.dnstream,rev(pos.dnstream)),
+            y = c(pi.dnstream[,1], rev(pi.dnstream[,2])),
+            col = 'gray75')
+    lines(pos.dnstream, pi.dnstream[,1], lwd=0.5)
+    lines(pos.dnstream, pi.dnstream[,2], lwd=0.5)
+    polygon(x = c(pos.dnstream,rev(pos.dnstream)),
+            y = c(p0.dnstream[,1], rev(p0.dnstream[,2])),
+            col = 'firebrick3')
+    lines(pos.dnstream, p0.dnstream[,1], lwd=0.5)
+    lines(pos.dnstream, p0.dnstream[,2], lwd=0.5)
+    polygon(x = c(pos.dnstream,rev(pos.dnstream)),
+            y = c(p1c1.dnstream[,1], rev(p1c1.dnstream[,2])),
+            col = 'deepskyblue3')
+    lines(pos.dnstream, p1c1.dnstream[,1], lwd=0.5)
+    lines(pos.dnstream, p1c1.dnstream[,2], lwd=0.5)
+
+```
+
+
+``` {r k1_foldedCIs_tofile, fig.width=4,fig.height=4,fig.align='center', include=FALSE}
+
+fout <- "folded_k1CIs_s05_m1per.pdf"
+pdf(fout, width=3,height=4)
+par(las=1, mar=c(5,5,2,1))
+plot(0,0,xlim=c(min(pos.dnstream),max(pos.dnstream)),
+     ylim=c(-4,8),xlab="",
+     ylab="std pi",type='n')
+    # for (i in 1:reps) {
+    #     lines(positions, pi.mat[,i],col=rgb(0.5,0.5,0.5,0.1))
+    # }
+    polygon(x = c(pos.dnstream,rev(pos.dnstream)),
+            y = c(pi.dnstream[,1], rev(pi.dnstream[,2])),
+            col = 'gray75')
+    lines(pos.dnstream, pi.dnstream[,1], lwd=0.5)
+    lines(pos.dnstream, pi.dnstream[,2], lwd=0.5)
+    polygon(x = c(pos.dnstream,rev(pos.dnstream)),
+            y = c(p0.dnstream[,1], rev(p0.dnstream[,2])),
+            col = 'firebrick3')
+    lines(pos.dnstream, p0.dnstream[,1], lwd=0.5)
+    lines(pos.dnstream, p0.dnstream[,2], lwd=0.5)
+    polygon(x = c(pos.dnstream,rev(pos.dnstream)),
+            y = c(p1c1.dnstream[,1], rev(p1c1.dnstream[,2])),
+            col = 'deepskyblue3')
+    lines(pos.dnstream, p1c1.dnstream[,1], lwd=0.5)
+    lines(pos.dnstream, p1c1.dnstream[,2], lwd=0.5)
+dev.off()
+
+```
+
+### Habitat 2 split into 2 subpopulations
+
+```{r migsel_k2, echo=FALSE,fig.width=4,fig.height=4,fig.align='center'}
+
+simdir <- "/Users/thom/Dropbox/1.Oregon/Data/active/simulations/forward/SLiM/simulations/migrationSelectionBalance/"
+
+# CALCULATE PI
+k    <- 2
+pi.mat <- NULL
+rescale <- 1000
+
+
+simstatfiles <- list.files(paste0(simdir,"N1-1000_N2-1000/s05_m1per/"))
+simstatfiles <- simstatfiles[grepl(paste0("_k",k,"_"),simstatfiles)]
+reps <- length(simstatfiles)
+
+# read in first file to get dimensions
+rep1 <- read.table(paste0(simdir,"N1-1000_N2-1000/s05_m1per/",simstatfiles[1]),
+                   sep = "\t",header=TRUE)
+n.windows <- dim(rep1)[1]
+positions <- rep1$position.mid
+
+pi.mat <- matrix(nrow=length(positions),ncol=length(simstatfiles))
+pi.mat[,1] <- rep1$pi.window
+
+for (rep in 2:reps) {
+    sim <- read.table(paste0(
+                      simdir,"N1-1000_N2-1000/s05_m1per/",simstatfiles[rep]),
+                      sep="\t",header=TRUE
+                      )
+    pi.mat[,rep] <- sim$pi.window
+}
+
+pi.grandmean <- ifelse(standardize==TRUE, mean(pi.mat), 0)
+pi.mat <- (pi.mat - pi.grandmean)*rescale
+
+# SUMMARIZE pi within allelic classes
+
+pi.0          <- matrix(nrow=length(positions),ncol=reps)
+pi.p1.class1  <- matrix(nrow=length(positions),ncol=reps)
+pi.1          <- matrix(nrow=length(positions),ncol=reps)
+
+for (rep in 1:length(simstatfiles)) {
+    sim <- read.table(paste0(
+                      simdir,"N1-1000_N2-1000/s05_m1per/",simstatfiles[rep]),
+                      sep="\t",header=TRUE
+                      )
+    pi.0[,rep]  <- sim$class0.pi.window
+    pi.1[,rep]  <- sim$class1.pi.window
+    pi.p1.class1[,rep]  <- sim$p1.class1.pi.window
+}
+positions <- (positions / 1000) - 50
+pi.0          <- (pi.0 - pi.grandmean) * rescale
+pi.p1.class1  <- (pi.p1.class1 - pi.grandmean) * rescale
+pi.1          <- (pi.1 - pi.grandmean) * rescale
+
+# compute t-distribution-based CIs
+
+pi.ci          <- matrix(nrow=length(positions),ncol=2)
+pi.0.ci          <- matrix(nrow=length(positions),ncol=2)
+pi.p1.class1.ci  <- matrix(nrow=length(positions),ncol=2)
+pi.1.ci          <- matrix(nrow=length(positions),ncol=2)
+
+for (i in 1:length(positions)) {
+    pi.ci[i,]            <- t.test(pi.mat[i,])$conf.int
+    pi.0.ci[i,]          <- t.test(pi.0[i,])$conf.int
+    pi.1.ci[i,]          <- t.test(pi.1[i,])$conf.int
+    pi.p1.class1.ci[i,]  <- t.test(pi.p1.class1[i,])$conf.int
+}
+
+pos.dnstream  <- positions      [positions > 0 ]
+pi.dnstream   <- pi.ci          [positions > 0,]
+p0.dnstream   <- pi.0.ci        [positions > 0,]
+p1c1.dnstream <- pi.p1.class1.ci[positions > 0,]
+
+# PLOT RESULTS
+
+par(las=1, mar=c(5,5,2,1))
+plot(0,0,xlim=c(min(pos.dnstream),max(pos.dnstream)),
+     ylim=c(-4,8),xlab="",
+     ylab="std pi",type='n')
+    # for (i in 1:reps) {
+    #     lines(positions, pi.mat[,i],col=rgb(0.5,0.5,0.5,0.1))
+    # }
+    polygon(x = c(pos.dnstream,rev(pos.dnstream)),
+            y = c(pi.dnstream[,1], rev(pi.dnstream[,2])),
+            col = 'gray75')
+    lines(pos.dnstream, pi.dnstream[,1], lwd=0.5)
+    lines(pos.dnstream, pi.dnstream[,2], lwd=0.5)
+    polygon(x = c(pos.dnstream,rev(pos.dnstream)),
+            y = c(p0.dnstream[,1], rev(p0.dnstream[,2])),
+            col = 'firebrick3')
+    lines(pos.dnstream, p0.dnstream[,1], lwd=0.5)
+    lines(pos.dnstream, p0.dnstream[,2], lwd=0.5)
+    polygon(x = c(pos.dnstream,rev(pos.dnstream)),
+            y = c(p1c1.dnstream[,1], rev(p1c1.dnstream[,2])),
+            col = 'deepskyblue3')
+    lines(pos.dnstream, p1c1.dnstream[,1], lwd=0.5)
+    lines(pos.dnstream, p1c1.dnstream[,2], lwd=0.5)
+
+```
+
+
+``` {r k2_foldedCIs_tofile, fig.width=4,fig.height=4,fig.align='center', include=FALSE}
+
+fout <- "folded_k2CIs_s05_m05per.pdf"
+pdf(fout, width=3,height=4)
+par(las=1, mar=c(5,5,2,1))
+plot(0,0,xlim=c(min(pos.dnstream),max(pos.dnstream)),
+     ylim=c(-4,8),xlab="",
+     ylab="std pi",type='n')
+    # for (i in 1:reps) {
+    #     lines(positions, pi.mat[,i],col=rgb(0.5,0.5,0.5,0.1))
+    # }
+    polygon(x = c(pos.dnstream,rev(pos.dnstream)),
+            y = c(pi.dnstream[,1], rev(pi.dnstream[,2])),
+            col = 'gray75')
+    lines(pos.dnstream, pi.dnstream[,1], lwd=0.5)
+    lines(pos.dnstream, pi.dnstream[,2], lwd=0.5)
+    polygon(x = c(pos.dnstream,rev(pos.dnstream)),
+            y = c(p0.dnstream[,1], rev(p0.dnstream[,2])),
+            col = 'firebrick3')
+    lines(pos.dnstream, p0.dnstream[,1], lwd=0.5)
+    lines(pos.dnstream, p0.dnstream[,2], lwd=0.5)
+    polygon(x = c(pos.dnstream,rev(pos.dnstream)),
+            y = c(p1c1.dnstream[,1], rev(p1c1.dnstream[,2])),
+            col = 'deepskyblue3')
+    lines(pos.dnstream, p1c1.dnstream[,1], lwd=0.5)
+    lines(pos.dnstream, p1c1.dnstream[,2], lwd=0.5)
+dev.off()
+
+```
+
+### Habitat 2 split into 5 subpopulations
+
+```{r migsel_k5, echo=FALSE,fig.width=4,fig.height=4,fig.align='center'}
+
+simdir <- "/Users/thom/Dropbox/1.Oregon/Data/active/simulations/forward/SLiM/simulations/migrationSelectionBalance/"
+
+# CALCULATE PI
+k    <- 5
+pi.mat <- NULL
+rescale <- 1000
+
+
+simstatfiles <- list.files(paste0(simdir,"N1-1000_N2-1000/s05_m1per/"))
+simstatfiles <- simstatfiles[grepl(paste0("_k",k,"_"),simstatfiles)]
+reps <- length(simstatfiles)
+
+# read in first file to get dimensions
+rep1 <- read.table(paste0(simdir,"N1-1000_N2-1000/s05_m1per/",simstatfiles[1]),
+                   sep = "\t",header=TRUE)
+n.windows <- dim(rep1)[1]
+positions <- rep1$position.mid
+
+pi.mat <- matrix(nrow=length(positions),ncol=length(simstatfiles))
+pi.mat[,1] <- rep1$pi.window
+
+for (rep in 2:reps) {
+    sim <- read.table(paste0(
+                      simdir,"N1-1000_N2-1000/s05_m1per/",simstatfiles[rep]),
+                      sep="\t",header=TRUE
+                      )
+    pi.mat[,rep] <- sim$pi.window
+}
+
+pi.grandmean <- ifelse(standardize==TRUE, mean(pi.mat), 0)
+pi.mat <- (pi.mat - pi.grandmean)*rescale
+
+# SUMMARIZE pi within allelic classes
+
+pi.0          <- matrix(nrow=length(positions),ncol=reps)
+pi.p1.class1  <- matrix(nrow=length(positions),ncol=reps)
+pi.1          <- matrix(nrow=length(positions),ncol=reps)
+
+for (rep in 1:length(simstatfiles)) {
+    sim <- read.table(paste0(
+                      simdir,"N1-1000_N2-1000/s05_m1per/",simstatfiles[rep]),
+                      sep="\t",header=TRUE
+                      )
+    pi.0[,rep]  <- sim$class0.pi.window
+    pi.1[,rep]  <- sim$class1.pi.window
+    pi.p1.class1[,rep]  <- sim$p1.class1.pi.window
+}
+positions <- (positions / 1000) - 50
+pi.0          <- (pi.0 - pi.grandmean) * rescale
+pi.p1.class1  <- (pi.p1.class1 - pi.grandmean) * rescale
+pi.1          <- (pi.1 - pi.grandmean) * rescale
+
+# compute t-distribution-based CIs
+
+pi.ci          <- matrix(nrow=length(positions),ncol=2)
+pi.0.ci          <- matrix(nrow=length(positions),ncol=2)
+pi.p1.class1.ci  <- matrix(nrow=length(positions),ncol=2)
+pi.1.ci          <- matrix(nrow=length(positions),ncol=2)
+
+for (i in 1:length(positions)) {
+    pi.ci[i,]            <- t.test(pi.mat[i,])$conf.int
+    pi.0.ci[i,]          <- t.test(pi.0[i,])$conf.int
+    pi.1.ci[i,]          <- t.test(pi.1[i,])$conf.int
+    pi.p1.class1.ci[i,]  <- t.test(pi.p1.class1[i,])$conf.int
+}
+
+pos.dnstream  <- positions      [positions > 0 ]
+pi.dnstream   <- pi.ci          [positions > 0,]
+p0.dnstream   <- pi.0.ci        [positions > 0,]
+p1c1.dnstream <- pi.p1.class1.ci[positions > 0,]
+
+# PLOT RESULTS
+
+par(las=1, mar=c(5,5,2,1))
+plot(0,0,xlim=c(min(pos.dnstream),max(pos.dnstream)),
+     ylim=c(-4,8),xlab="",
+     ylab="std pi",type='n')
+    # for (i in 1:reps) {
+    #     lines(positions, pi.mat[,i],col=rgb(0.5,0.5,0.5,0.1))
+    # }
+    polygon(x = c(pos.dnstream,rev(pos.dnstream)),
+            y = c(pi.dnstream[,1], rev(pi.dnstream[,2])),
+            col = 'gray75')
+    lines(pos.dnstream, pi.dnstream[,1], lwd=0.5)
+    lines(pos.dnstream, pi.dnstream[,2], lwd=0.5)
+    polygon(x = c(pos.dnstream,rev(pos.dnstream)),
+            y = c(p0.dnstream[,1], rev(p0.dnstream[,2])),
+            col = 'firebrick3')
+    lines(pos.dnstream, p0.dnstream[,1], lwd=0.5)
+    lines(pos.dnstream, p0.dnstream[,2], lwd=0.5)
+    polygon(x = c(pos.dnstream,rev(pos.dnstream)),
+            y = c(p1c1.dnstream[,1], rev(p1c1.dnstream[,2])),
+            col = 'deepskyblue3')
+    lines(pos.dnstream, p1c1.dnstream[,1], lwd=0.5)
+    lines(pos.dnstream, p1c1.dnstream[,2], lwd=0.5)
+
+```
+
+
+``` {r k5_foldedCIs_tofile, fig.width=4,fig.height=4,fig.align='center', include=FALSE}
+
+fout <- "folded_k5CIs_s05_m05per.pdf"
+pdf(fout, width=3,height=4)
+par(las=1, mar=c(5,5,2,1))
+plot(0,0,xlim=c(min(pos.dnstream),max(pos.dnstream)),
+     ylim=c(-4,8),xlab="",
+     ylab="std pi",type='n')
+    # for (i in 1:reps) {
+    #     lines(positions, pi.mat[,i],col=rgb(0.5,0.5,0.5,0.1))
+    # }
+    polygon(x = c(pos.dnstream,rev(pos.dnstream)),
+            y = c(pi.dnstream[,1], rev(pi.dnstream[,2])),
+            col = 'gray75')
+    lines(pos.dnstream, pi.dnstream[,1], lwd=0.5)
+    lines(pos.dnstream, pi.dnstream[,2], lwd=0.5)
+    polygon(x = c(pos.dnstream,rev(pos.dnstream)),
+            y = c(p0.dnstream[,1], rev(p0.dnstream[,2])),
+            col = 'firebrick3')
+    lines(pos.dnstream, p0.dnstream[,1], lwd=0.5)
+    lines(pos.dnstream, p0.dnstream[,2], lwd=0.5)
+    polygon(x = c(pos.dnstream,rev(pos.dnstream)),
+            y = c(p1c1.dnstream[,1], rev(p1c1.dnstream[,2])),
+            col = 'deepskyblue3')
+    lines(pos.dnstream, p1c1.dnstream[,1], lwd=0.5)
+    lines(pos.dnstream, p1c1.dnstream[,2], lwd=0.5)
+dev.off()
+
+```
+
+
+
+
+
+
+```{r migsel_matrix, echo=FALSE,include=FALSE, fig.width=8,fig.height=8,fig.align='center'}
+
+simdir <- "/Users/thom/Dropbox/1.Oregon/Data/active/simulations/forward/SLiM/simulations/migrationSelectionBalance/"
+
+ks   <- c(1,2,5)
+scoeffs <- c("20","05")
+s    <- "20"
+ms   <- c("02","1","2")
+m    <- "1"
+
+standardize <- FALSE
+ymin <- ifelse(standardize == TRUE,-6,0)
+ymax <- ifelse(standardize == TRUE,4,10)
+layout(matrix(1:9,3,3,byrow=TRUE))
+for (m in ms) {
+    for (k in ks) {
+        # CALCULATE PI
+        pi.mat <- NULL
+        rescale <- 1000
+        
+        paramstring <- paste0("N1-1000_N2-1000/s",s,"/m",m,"per/")
+        
+        simstatfiles <- list.files(paste0(simdir,paramstring))
+        simstatfiles <- simstatfiles[grepl(paste0("_k",k,"_"),simstatfiles)]
+        reps <- length(simstatfiles)
+        # read in first file to get dimensions
+        rep1 <- read.table(paste0(simdir,paramstring,simstatfiles[1]),
+                           sep = "\t",header=TRUE)
+        n.windows <- dim(rep1)[1]
+        positions <- rep1$position.mid
+        
+        pi.mat <- matrix(nrow=length(positions),ncol=length(simstatfiles))
+        pi.mat[,1] <- rep1$pi.window
+        
+        for (rep in 2:reps) {
+            sim <- read.table(paste0(
+                              simdir,paramstring,simstatfiles[rep]),
+                              sep="\t",header=TRUE
+                              )
+            pi.mat[,rep] <- sim$pi.window
+        }
+        
+        pi.grandmean <- ifelse(standardize==TRUE, mean(pi.mat), 0)
+        pi.mat <- (pi.mat - pi.grandmean)*rescale
+        # SUMMARIZE pi within allelic classes
+        
+        pi.0          <- matrix(nrow=length(positions),ncol=reps)
+        pi.p1.class1  <- matrix(nrow=length(positions),ncol=reps)
+        pi.1          <- matrix(nrow=length(positions),ncol=reps)
+        
+        for (rep in 1:length(simstatfiles)) {
+            sim <- read.table(paste0(
+                              simdir,paramstring,simstatfiles[rep]),
+                              sep="\t",header=TRUE
+                              )
+            pi.0[,rep]  <- sim$class0.pi.window
+            pi.1[,rep]  <- sim$class1.pi.window
+            pi.p1.class1[,rep]  <- sim$p1.class1.pi.window
+        }
+        positions <- (positions / 1000) - 50
+        pi.0          <- (pi.0 - pi.grandmean) * rescale
+        pi.p1.class1  <- (pi.p1.class1 - pi.grandmean) * rescale
+        pi.1          <- (pi.1 - pi.grandmean) * rescale
+        pi.0.mean     <- mean(pi.0)
+        pi.p1c1.mean  <- mean(pi.p1.class1)
+        pi.mean       <- mean(pi.mat)
+        # compute t-distribution-based CIs
+        
+        pi.ci          <- matrix(nrow=length(positions),ncol=2)
+        pi.0.ci          <- matrix(nrow=length(positions),ncol=2)
+        pi.p1.class1.ci  <- matrix(nrow=length(positions),ncol=2)
+        pi.1.ci          <- matrix(nrow=length(positions),ncol=2)
+        
+        for (i in 1:length(positions)) {
+            pi.ci[i,]            <- t.test(pi.mat[i,])$conf.int
+            pi.0.ci[i,]          <- t.test(pi.0[i,])$conf.int
+            pi.1.ci[i,]          <- t.test(pi.1[i,])$conf.int
+            pi.p1.class1.ci[i,]  <- t.test(pi.p1.class1[i,])$conf.int
+        }
+        
+        pos.dnstream  <- positions      [positions > 0 ]
+        pi.dnstream   <- pi.ci          [positions > 0,]
+        p0.dnstream   <- pi.0.ci        [positions > 0,]
+        p1c1.dnstream <- pi.p1.class1.ci[positions > 0,]
+        
+        # PLOT RESULTS
+        
+        par(las=1, mar=c(5,5,2,1))
+        plot(0,0,xlim=c(min(pos.dnstream),max(pos.dnstream)),
+             ylim=c(ymin,ymax),xlab="",
+             ylab="pi",type='n')
+            abline(h = pi.mean)
+            abline(h = pi.0.mean, col='firebrick3')
+            abline(h = pi.p1c1.mean, col='deepskyblue3')
+            polygon(x = c(pos.dnstream,rev(pos.dnstream)),
+                    y = c(pi.dnstream[,1], rev(pi.dnstream[,2])),
+                    col = 'gray75')
+            lines(pos.dnstream, pi.dnstream[,1], lwd=0.5)
+            lines(pos.dnstream, pi.dnstream[,2], lwd=0.5)
+            polygon(x = c(pos.dnstream,rev(pos.dnstream)),
+                    y = c(p0.dnstream[,1], rev(p0.dnstream[,2])),
+                    col = 'firebrick3')
+            lines(pos.dnstream, p0.dnstream[,1], lwd=0.5)
+            lines(pos.dnstream, p0.dnstream[,2], lwd=0.5)
+            polygon(x = c(pos.dnstream,rev(pos.dnstream)),
+                    y = c(p1c1.dnstream[,1], rev(p1c1.dnstream[,2])),
+                    col = 'deepskyblue3')
+            lines(pos.dnstream, p1c1.dnstream[,1], lwd=0.5)
+            lines(pos.dnstream, p1c1.dnstream[,2], lwd=0.5)
+    }
+}
+
+
+```
+
+
+
+
+```{r migsel_matrix_tofile, echo=FALSE,include=FALSE}
+
+simdir <- "/Users/thom/Dropbox/1.Oregon/Data/active/simulations/forward/SLiM/simulations/migrationSelectionBalance/"
+
+ks   <- c(1,2,5)
+scoeffs <- c("20","05")
+s    <- "20"
+ms   <- c("02","1","2")
+m    <- "1"
+
+standardize <- FALSE
+outfile <- ifelse(standardize == TRUE, 
+                  paste0(simdir,"folded_k1-5_m02-2_s20_std.pdf"),
+                  paste0(simdir,"folded_k1-5_m02-2_s20.pdf"))
+pdf(outfile, width=8,height=8)
+ymin <- ifelse(standardize == TRUE,-6,0)
+ymax <- ifelse(standardize == TRUE,4,10)
+layout(matrix(1:9,3,3,byrow=TRUE))
+for (m in ms) {
+    for (k in ks) {
+        # CALCULATE PI
+        pi.mat <- NULL
+        rescale <- 1000
+        
+        paramstring <- paste0("N1-1000_N2-1000/s",s,"/m",m,"per/")
+        
+        simstatfiles <- list.files(paste0(simdir,paramstring))
+        simstatfiles <- simstatfiles[grepl(paste0("_k",k,"_"),simstatfiles)]
+        reps <- length(simstatfiles)
+        # read in first file to get dimensions
+        rep1 <- read.table(paste0(simdir,paramstring,simstatfiles[1]),
+                           sep = "\t",header=TRUE)
+        n.windows <- dim(rep1)[1]
+        positions <- rep1$position.mid
+        
+        pi.mat <- matrix(nrow=length(positions),ncol=length(simstatfiles))
+        pi.mat[,1] <- rep1$pi.window
+        
+        for (rep in 2:reps) {
+            sim <- read.table(paste0(
+                              simdir,paramstring,simstatfiles[rep]),
+                              sep="\t",header=TRUE
+                              )
+            pi.mat[,rep] <- sim$pi.window
+        }
+        
+        pi.grandmean <- ifelse(standardize==TRUE, mean(pi.mat), 0)
+        pi.mat <- (pi.mat - pi.grandmean)*rescale
+        # SUMMARIZE pi within allelic classes
+        
+        pi.0          <- matrix(nrow=length(positions),ncol=reps)
+        pi.p1.class1  <- matrix(nrow=length(positions),ncol=reps)
+        pi.1          <- matrix(nrow=length(positions),ncol=reps)
+        
+        for (rep in 1:length(simstatfiles)) {
+            sim <- read.table(paste0(
+                              simdir,paramstring,simstatfiles[rep]),
+                              sep="\t",header=TRUE
+                              )
+            pi.0[,rep]  <- sim$class0.pi.window
+            pi.1[,rep]  <- sim$class1.pi.window
+            pi.p1.class1[,rep]  <- sim$p1.class1.pi.window
+        }
+        positions <- (positions / 1000) - 50
+        pi.0          <- (pi.0 - pi.grandmean) * rescale
+        pi.p1.class1  <- (pi.p1.class1 - pi.grandmean) * rescale
+        pi.1          <- (pi.1 - pi.grandmean) * rescale
+        pi.0.mean     <- mean(pi.0)
+        pi.p1c1.mean  <- mean(pi.p1.class1)
+        pi.mean       <- mean(pi.mat)
+        # compute t-distribution-based CIs
+        
+        pi.ci          <- matrix(nrow=length(positions),ncol=2)
+        pi.0.ci          <- matrix(nrow=length(positions),ncol=2)
+        pi.p1.class1.ci  <- matrix(nrow=length(positions),ncol=2)
+        pi.1.ci          <- matrix(nrow=length(positions),ncol=2)
+        
+        for (i in 1:length(positions)) {
+            pi.ci[i,]            <- t.test(pi.mat[i,])$conf.int
+            pi.0.ci[i,]          <- t.test(pi.0[i,])$conf.int
+            pi.1.ci[i,]          <- t.test(pi.1[i,])$conf.int
+            pi.p1.class1.ci[i,]  <- t.test(pi.p1.class1[i,])$conf.int
+        }
+        
+        pos.dnstream  <- positions      [positions > 0 ]
+        pi.dnstream   <- pi.ci          [positions > 0,]
+        p0.dnstream   <- pi.0.ci        [positions > 0,]
+        p1c1.dnstream <- pi.p1.class1.ci[positions > 0,]
+        
+        # PLOT RESULTS
+        
+        par(las=1, mar=c(5,5,2,1))
+        plot(0,0,xlim=c(min(pos.dnstream),max(pos.dnstream)),
+             ylim=c(ymin,ymax),xlab="",
+             ylab="pi",type='n')
+            abline(h = pi.mean)
+            abline(h = pi.0.mean, col='firebrick3')
+            abline(h = pi.p1c1.mean, col='deepskyblue3')
+            polygon(x = c(pos.dnstream,rev(pos.dnstream)),
+                    y = c(pi.dnstream[,1], rev(pi.dnstream[,2])),
+                    col = 'gray75')
+            lines(pos.dnstream, pi.dnstream[,1], lwd=0.5)
+            lines(pos.dnstream, pi.dnstream[,2], lwd=0.5)
+            polygon(x = c(pos.dnstream,rev(pos.dnstream)),
+                    y = c(p0.dnstream[,1], rev(p0.dnstream[,2])),
+                    col = 'firebrick3')
+            lines(pos.dnstream, p0.dnstream[,1], lwd=0.5)
+            lines(pos.dnstream, p0.dnstream[,2], lwd=0.5)
+            polygon(x = c(pos.dnstream,rev(pos.dnstream)),
+                    y = c(p1c1.dnstream[,1], rev(p1c1.dnstream[,2])),
+                    col = 'deepskyblue3')
+            lines(pos.dnstream, p1c1.dnstream[,1], lwd=0.5)
+            lines(pos.dnstream, p1c1.dnstream[,2], lwd=0.5)
+    }
+}
+dev.off()
+
+
+```
