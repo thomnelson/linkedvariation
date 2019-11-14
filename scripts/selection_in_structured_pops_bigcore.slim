@@ -1,0 +1,168 @@
+initialize() {
+//	defineConstant("s", 0.2);
+//	defineConstant("r", 5e-5);
+//	defineConstant("mu", 5e-7);
+//	defineConstant("N1", 1000);
+//	defineConstant("N2", 1000);
+//	defineConstant("mig_red_factor", 1);
+//	defineConstant("kpops", 1);
+//	defineConstant("seed", 1);
+//	defineConstant("burnin", N1*5);
+//	defineConstant("runGens", burnin*2);
+//	defineConstant("simID", 1);
+	defineConstant("sampleSize", 50);
+	defineConstant("tmpdir","/home/tn131943e/simulation/forward/slim/stickles/tmp/") ;
+	defineConstant("outdir","/home/tn131943e/simulation/forward/slim/stickles/output/detail/selection20Ngens/");
+//	defineConstant("tmpdir", "/Users/thom/Dropbox/1.Shared_with_Bill/9.Manuscripts/2.LinkedVariation/4.data/0.revision/1.simulation/tmp/");
+//	defineConstant("outdir", "/Users/thom/Dropbox/1.Shared_with_Bill/9.Manuscripts/2.LinkedVariation/4.data/0.revision/1.simulation/output/");
+//	cat("burnin "+burnin+"\n") ;
+//	cat("rungens "+runGens+"\n") ;
+           // mutation types: m1 will be neutral
+           //                 m2 will be locally adaptive, + in p2
+           //						m3 will be locally adaptive, + in p1
+	initializeMutationType("m1", 0.5, "f", 0.0);
+	initializeMutationType("m2", 0.5, "f", s);
+	// mutation types to represent chromosome ends
+	initializeMutationType("m3", 0.5, "f", 0.0);
+	initializeMutationType("m4", 0.5, "f", 0.0);
+	initializeMutationType("m5", 0.5, "f", -1*s); // H1-adaptive
+
+	// g1 genomic element type: uses m1 for all mutations
+	initializeGenomicElementType("g1", c(m1), c(100));
+        // Chromosome of mutable length 100 kb with uniform recombination
+	initializeGenomicElement(g1, 0, 102003);
+	ends =                      c(0,50000,51000,51001,51002,52002,102002,102003);
+	initializeRecombinationRate(c(r,r    ,0    ,0    ,0    ,0    ,r     ,r), ends);
+	// set mutation landscape so that 'core' allele does not mutate.
+	// CREATE IMMUTABLE ELEMENTS AT ENDS AND MIDDLE TO KEEP MS COORDS OK
+	mus  =                      c(0,mu   ,mu   ,0    ,0    ,mu   ,mu    ,0);
+	initializeMutationRate(mus,ends);
+							  
+}
+// create two habitat types w/ 1000 individuals each
+//  one will be panmictic, the other will be subdivided
+//  into k-1 subpopulations, each connected only to the
+//  large subpopulation of the other habitat type
+1 {
+//	sim.rescheduleScriptBlock(s1, burnin, burnin);
+//	sim.rescheduleScriptBlock(s2, runGens, runGens);
+	sim.addSubpop("p1", N1);
+}
+
+10000 {
+      N2pop = integerDiv(N2,kpops);
+      for (i in 2:(kpops+1))
+      	  sim.addSubpopSplit(i, N2pop, p1);
+      for (i in 1:(kpops))
+      	  {
+	  sim.subpopulations[i].setMigrationRates(
+		sim.subpopulations[0],
+		1/(N2pop * mig_red_factor));
+	  sim.subpopulations[0].setMigrationRates(
+		sim.subpopulations[i],
+		1/(N1 * mig_red_factor));
+	}
+}
+
+// change fitness value of m2 mutations 
+//so they're deleterious in p1
+fitness(m2,p1) { return 1/relFitness; }
+//fitness(m3,p2) { return 1/relFitness; }
+fitness(m5,p1) { return 1/relFitness; }
+
+20000 late() {
+	// SAMPLE DIVERSITY BEFORE SELECTION
+	//
+	// introduce mutations at beginning and end of chr to
+	//   ensure that ms coordinates are the same across simulations
+	size2mutate = asInteger(N1*2);
+	target_genomes = sample(sim.subpopulations[0].genomes, size2mutate);
+	// introduce a mutation of type m3 at position 0 in all p1 genomes
+	target_genomes.addNewDrawnMutation(m3,0);
+	
+	// introduce m1 mutations in all other
+	N2pop = integerDiv(N2,kpops);
+	size2mutate = asInteger(N2pop*2);
+	target_genomes = sample(sim.subpopulations[1].genomes, size2mutate);
+	target_genomes.addNewDrawnMutation(m4,102003);
+
+	// Sample genomes from p1 and p2 and output MS
+	genomes  = sample(sim.subpopulations[0].genomes, sampleSize);
+	for (i in 1:kpops) {
+            genomes = c(genomes,sample(sim.subpopulations[i].genomes, sampleSize));
+        }
+	outpath   = c(paste(c(outdir+ "k" ,kpops,"/mred",mig_red_factor,"/s",format("%.2f",s), "/replicate",simID,"_neutralburnin.ms"),""));
+	genomes.outputMS(filePath=outpath);
+
+	// OUTPUT SIMULATION STATE AT END OF BURNIN
+	sim.outputFull(tmpdir+"migsel_" + simID + "_k" + kpops + "_" + mig_red_factor + ".txt");
+	size2mutate = asInteger(integerDiv(integerDiv(N2,(kpops)),5));
+   size2mutate = 1;
+	target_genomes = sample(sim.subpopulations[1].genomes, size2mutate);
+	// introduce a mutation of type m2 at position 51001
+	target_genomes.addNewDrawnMutation(m2,51001);
+	//	target_genomes = sample(sim.subpopulations[0].genomes, size2mutate);
+	// introduce a mutation of type m2 at position 50000
+	//	target_genomes.addNewDrawnMutation(m3,49999);
+	
+}
+
+	
+// evolve, check that m2 isn't lost
+
+20000:60000 late() {
+	if (sim.countOfMutationsOfType(m2) == 0) {
+		// go back to generation 1000 
+		sim.readFromPopulationFile(tmpdir+"migsel_" + simID + "_k" + kpops + "_" + mig_red_factor + ".txt");
+		// Overwrite prev file
+		sim.outputFull(tmpdir+"migsel_" + simID + "_k" + kpops + "_" + mig_red_factor + ".txt");
+		// REINTRODUCE MUTATION
+		size2mutate = asInteger(integerDiv(integerDiv(N2,(kpops)),5));
+	   size2mutate = 1;
+		target_genomes = sample(sim.subpopulations[1].genomes, size2mutate);
+	// introduce a mutation of type m2 at position 50000
+		target_genomes.addNewDrawnMutation(m2,51001);
+		// RESET MIGRATION RATES
+		N2pop = integerDiv(N2,(kpops));
+		for (i in 1:(kpops)) 
+				{
+				sim.subpopulations[i].setMigrationRates(
+					sim.subpopulations[0], 
+					1/(N2pop * mig_red_factor));
+				sim.subpopulations[0].setMigrationRates(
+					sim.subpopulations[i], 
+					1/(N1 * mig_red_factor));
+				}
+
+	}
+}
+
+// output sample
+60000 late() { 
+	// introduce mutations at beginning and end of chr to
+	//   ensure that ms coordinates are the same across simulations
+	// introduce m3 mutations in H1 if lost
+	if (sim.countOfMutationsOfType(m3) == 0) {
+		size2mutate = asInteger(N1*2);
+		target_genomes = sample(sim.subpopulations[0].genomes, size2mutate);
+		// introduce a mutation of type m1 at position 0 in all p1 genomes
+		target_genomes.addNewDrawnMutation(m3,0);
+	}
+	// introduce m4 mutations in H2-1 if lost
+	if (sim.countOfMutationsOfType(m4) == 0) {
+	N2pop = integerDiv(N2,kpops);
+		size2mutate = asInteger(N2pop*2);
+		target_genomes = sample(sim.subpopulations[1].genomes, size2mutate);
+		target_genomes.addNewDrawnMutation(m4,102003);
+	}
+	// Sample genomes and output MS
+	genomes  = sample(sim.subpopulations[0].genomes, sampleSize);
+	for (i in 1:kpops) {
+            genomes = c(genomes,sample(sim.subpopulations[i].genomes, sampleSize));
+        }
+	outpath   = c(paste(c(outdir+ "k" ,kpops,"/mred",mig_red_factor,"/s",format("%.2f",s), "/replicate",simID,"_end.ms"),""));
+	genomes.outputMS(filePath=outpath);
+	// output all of H1
+	outpath   = c(paste(c(outdir+ "k" ,kpops,"/mred",mig_red_factor,"/s",format("%.2f",s), "/replicate",simID,"_end_H1all.ms"),""));
+	sim.subpopulations[0].genomes.outputMS(filePath=outpath);
+}
